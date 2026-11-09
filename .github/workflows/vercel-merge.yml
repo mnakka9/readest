@@ -1,7 +1,6 @@
 name: Deploy to vercel on merge
 on:
-  push:
-    branches:
+  # push disabled
       - main
 permissions:
   contents: read

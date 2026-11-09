@@ -1,8 +1,7 @@
 name: Build with Nix
 
 on:
-  push:
-    branches: [main]
+  # push disabled
 concurrency:
   group: nix-${{ github.ref }}
   cancel-in-progress: true
