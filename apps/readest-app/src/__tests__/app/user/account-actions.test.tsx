@@ -1,7 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import AccountActions from '@/app/user/components/AccountActions';
-import type { UserPlan } from '@/types/quota';
 
 vi.mock('@/context/EnvContext', () => ({
   useEnv: () => ({ appService: { hasIAP: false } }),
@@ -13,16 +12,12 @@ vi.mock('@/hooks/useTranslation', () => ({
       params ? key.replace(/\{\{(\w+)\}\}/g, (_match, name) => String(params[name] ?? '')) : key,
 }));
 
-const renderActions = (userPlan: UserPlan = 'free', customizationPurchased = false) => {
+const renderActions = () => {
   const onConfirmDelete = vi.fn();
   const onConfirmDeleteAllBooks = vi.fn();
   render(
     <AccountActions
       userEmail='reader@example.test'
-      planName={`${userPlan} plan`}
-      userPlan={userPlan}
-      customizationPurchased={customizationPurchased}
-      iapAvailable={false}
       onLogout={vi.fn()}
       onResetPassword={vi.fn()}
       onUpdateEmail={vi.fn()}
@@ -42,36 +37,15 @@ const confirmationInput = () => screen.getByRole('textbox', { name: 'Type DELETE
 afterEach(cleanup);
 
 describe('account deletion confirmation (#7251)', () => {
-  it('identifies the account and its plan inside the confirmation', () => {
-    renderActions('plus');
+  it('identifies the account inside the confirmation', () => {
+    renderActions();
     openAccountDeletion();
 
     const dialog = screen.getByText('Delete Your Account?').parentElement!;
     expect(dialog.textContent).toContain('reader@example.test');
-    expect(dialog.textContent).toContain('plus plan');
-    expect(dialog.textContent).toContain('All your data in the cloud will be permanently deleted.');
-  });
-
-  it.each<UserPlan>([
-    'plus',
-    'pro',
-    'purchase',
-  ])('warns about paid benefits for %s accounts', (plan) => {
-    renderActions(plan);
-    openAccountDeletion();
-    expect(screen.getByText('This account has a paid plan or purchases.')).toBeTruthy();
-  });
-
-  it('warns about a customization purchase even on the free plan', () => {
-    renderActions('free', true);
-    openAccountDeletion();
-    expect(screen.getByText('This account has a paid plan or purchases.')).toBeTruthy();
-  });
-
-  it('does not claim a free account has paid benefits', () => {
-    renderActions();
-    openAccountDeletion();
-    expect(screen.queryByText('This account has a paid plan or purchases.')).toBeNull();
+    expect(dialog.textContent).toContain(
+      'This action cannot be undone. Your account will be permanently deleted.',
+    );
   });
 
   it('only enables deletion after typing the exact confirmation word', async () => {
@@ -145,7 +119,7 @@ describe('account deletion confirmation (#7251)', () => {
   });
 
   it('keeps the delete-all-books confirmation independent', async () => {
-    const { onConfirmDelete, onConfirmDeleteAllBooks } = renderActions('pro');
+    const { onConfirmDelete, onConfirmDeleteAllBooks } = renderActions();
     openAccountDeletion();
     fireEvent.change(confirmationInput(), { target: { value: 'DELETE' } });
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
