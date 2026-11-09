@@ -6,9 +6,9 @@ name: Build Fork
 
 on:
   push:
-    branches: [main, feat/*, build/*]
+    branches: ['main', 'feat/*', 'build/*']
   pull_request:
-    branches: [main]
+    branches: ['main']
   workflow_dispatch:
     inputs:
       arch:
@@ -86,10 +86,8 @@ jobs:
             -alias readest -keyalg RSA -keysize 2048 -validity 10000 \
             -storepass readest -keypass readest \
             -dname "CN=Readest, OU=Fork, O=Readest, L=Fork, S=Fork, C=US"
-          cat << 'EOF' > src-tauri/gen/android/keystore.properties
-keyAlias=readest
-password=readest
-EOF
+          echo "keyAlias=readest" > src-tauri/gen/android/keystore.properties
+          echo "password=readest" >> src-tauri/gen/android/keystore.properties
           echo "storeFile=$RUNNER_TEMP/keystore.jks" >> src-tauri/gen/android/keystore.properties
           
           ARCH="${{ github.event.inputs.arch || 'aarch64' }}"
