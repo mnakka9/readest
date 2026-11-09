@@ -165,7 +165,7 @@ export const BOOKSHELF_FIELDS: BookshelfField[] = [
     kind: 'text',
     choices: [
       { value: 'local', label: _('On this device') },
-      { value: 'cloud', label: _('In Readest Cloud') },
+      { value: 'cloud', label: _('Synced copy available') },
       { value: 'streaming', label: _('Streaming') },
       { value: 'unavailable', label: _('Unavailable') },
     ],
@@ -188,7 +188,12 @@ export const BOOKSHELF_FIELDS: BookshelfField[] = [
     kind: 'boolean',
     read: (b) => !!(b.downloadedAt || b.absDownloadedAt),
   },
-  { id: 'uploaded', label: _('In Readest Cloud'), kind: 'boolean', read: (b) => !!b.uploadedAt },
+  {
+    id: 'uploaded',
+    label: _('Synced copy available'),
+    kind: 'boolean',
+    read: (b) => !!b.uploadedAt,
+  },
   {
     id: 'downloadStatus',
     label: _('Download status'),

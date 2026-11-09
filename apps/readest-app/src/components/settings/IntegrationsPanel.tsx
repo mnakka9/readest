@@ -29,7 +29,6 @@ import { useEnv } from '@/context/EnvContext';
 import { useAuth } from '@/context/AuthContext';
 import { useTranslation } from '@/hooks/useTranslation';
 import { useKeyDownActions } from '@/hooks/useKeyDownActions';
-import { useQuotaStats } from '@/hooks/useQuotaStats';
 import { useSettingsStore } from '@/store/settingsStore';
 import { useCustomOPDSStore } from '@/store/customOPDSStore';
 import { useABSServerStore } from '@/store/absServerStore';
@@ -37,7 +36,6 @@ import { useFileSyncStore } from '@/store/fileSyncStore';
 import { useLocalSendStore } from '@/store/localsendStore';
 import { CatalogManager } from '@/app/opds/components/CatalogManager';
 import { saveSysSettings } from '@/helpers/settings';
-import { isCloudSyncAllowed } from '@/utils/access';
 import { isTauriAppPlatform, isWebAppPlatform } from '@/services/environment';
 import {
   getLocalSendAlias,
@@ -48,7 +46,7 @@ import { getGoogleWebClientId } from '@/services/sync/providers/gdrive/buildGoog
 import { getMicrosoftClientId } from '@/services/sync/providers/onedrive/buildOneDriveProvider';
 import { isICloudSupportedPlatform } from '@/services/sync/providers/icloud/buildICloudProvider';
 import { getICloudContainerStatus } from '@/utils/bridge';
-import { navigateToLogin, navigateToProfile } from '@/utils/nav';
+import { navigateToLogin } from '@/utils/nav';
 import { eventDispatcher } from '@/utils/event';
 import ABSForm from './integrations/ABSForm';
 import BookOrbitForm from './integrations/BookOrbitForm';
@@ -66,16 +64,11 @@ import GoogleDriveForm from './integrations/GoogleDriveForm';
 import OneDriveForm from './integrations/OneDriveForm';
 import ICloudForm from './integrations/ICloudForm';
 import S3Form from './integrations/S3Form';
+import SpaceByteForm from './integrations/SpaceByteForm';
 import { persistCloudProviderEnabled } from './integrations/cloudSync';
-import {
-  canToggleCloudProvider,
-  getReadestCloudRowStatus,
-  getThirdPartyRowStatus,
-  shouldShowCloudProviderBadge,
-} from './integrations/cloudSyncStatus';
+import { canToggleCloudProvider, getThirdPartyRowStatus } from './integrations/cloudSyncStatus';
 import {
   getCloudSyncProviders,
-  isReadestCloudEnabled,
   resolveCloudSyncGate,
   settingsKeyForBackend,
   type CloudSyncProviderKind,
@@ -86,7 +79,7 @@ import { getConnectorHealth } from '@/services/sync/dataFlow/log';
 import DataFlowPage from './integrations/DataFlowPage';
 import { useFlowConnectors, useFlowState } from './integrations/useFlowConnectors';
 import SubPageHeader from './SubPageHeader';
-import { BoxedList, NavigationRow, SectionTitle, SettingLabel, Tips } from './primitives';
+import { SectionTitle, SettingLabel, Tips } from './primitives';
 
 type SubPage =
   | 'kosync'
@@ -97,7 +90,7 @@ type SubPage =
   | 's3'
   | 'onedrive'
   | 'icloud'
-  | 'readest-cloud'
+  | 'spacebyte'
   | 'readwise'
   | 'hardcover'
   | 'pagebound'
@@ -156,6 +149,8 @@ const IntegrationsPanel: React.FC = () => {
   const onedriveLastError = useFileSyncStore((s) => s.lastErrorByKind.onedrive);
   const isICloudSyncing = useFileSyncStore((s) => s.byKind.icloud?.isSyncing ?? false);
   const icloudLastError = useFileSyncStore((s) => s.lastErrorByKind.icloud);
+  const isSpaceByteSyncing = useFileSyncStore((s) => s.byKind.spacebyte?.isSyncing ?? false);
+  const spacebyteLastError = useFileSyncStore((s) => s.lastErrorByKind.spacebyte);
   // "Configured" for iCloud = the container is reachable (an entitled build
   // with an iCloud session). Probed once; Apple Tauri platforms only.
   const [icloudAvailable, setICloudAvailable] = useState(false);
@@ -165,20 +160,6 @@ const IntegrationsPanel: React.FC = () => {
       .then((s) => setICloudAvailable(!!s.available && !!s.documentsPath))
       .catch(() => setICloudAvailable(false));
   }, []);
-  // Third-party cloud sync will be a premium feature (any paid plan), but it is
-  // temporarily UNGATED while the feature stabilises — `isCloudSyncAllowed`
-  // returns true for every plan until `CLOUD_SYNC_REQUIRES_PREMIUM` is flipped
-  // back on. The `?? 'free'` keeps the (re-gated) loading state non-premium.
-  const { userProfilePlan, customizationPurchased } = useQuotaStats();
-  const isCloudSyncPremium = isCloudSyncAllowed(userProfilePlan ?? 'free', customizationPurchased);
-  const premiumBadge = shouldShowCloudProviderBadge({
-    signedIn: !!user,
-    planLoading: userProfilePlan === undefined,
-    isPremium: isCloudSyncPremium,
-  })
-    ? _('Premium')
-    : undefined;
-
   const [subPage, setSubPage] = useState<SubPage>(null);
   const flowConnectors = useFlowConnectors();
   const flowState = useFlowState();
@@ -226,20 +207,6 @@ const IntegrationsPanel: React.FC = () => {
   // stick to the next open. Recognised values match the SubPage union.
   useEffect(() => {
     if (!requestedSubPage) return;
-    const isCloudRequest =
-      requestedSubPage === 'webdav' ||
-      requestedSubPage === 'gdrive' ||
-      requestedSubPage === 's3' ||
-      requestedSubPage === 'onedrive' ||
-      requestedSubPage === 'icloud' ||
-      requestedSubPage === 'cloudsync';
-    // Cloud-sync sub-pages are premium-gated. If the plan is still loading, wait
-    // (don't consume the request); once known, only honor it for paid plans.
-    if (isCloudRequest && !isCloudSyncPremium) {
-      if (userProfilePlan === undefined) return;
-      setRequestedSubPage(null);
-      return;
-    }
     if (
       requestedSubPage === 'kosync' ||
       requestedSubPage === 'bookorbit' ||
@@ -249,6 +216,7 @@ const IntegrationsPanel: React.FC = () => {
       requestedSubPage === 's3' ||
       requestedSubPage === 'onedrive' ||
       requestedSubPage === 'icloud' ||
+      requestedSubPage === 'spacebyte' ||
       requestedSubPage === 'readwise' ||
       requestedSubPage === 'hardcover' ||
       requestedSubPage === 'pagebound' ||
@@ -260,11 +228,25 @@ const IntegrationsPanel: React.FC = () => {
     ) {
       setSubPage(requestedSubPage);
     } else if (requestedSubPage === 'cloudsync') {
-      // Back-compat with the brief unified "Cloud Sync" page.
-      setSubPage('gdrive');
+      setSubPage('spacebyte');
     }
     setRequestedSubPage(null);
-  }, [requestedSubPage, setRequestedSubPage, isCloudSyncPremium, userProfilePlan]);
+  }, [requestedSubPage, setRequestedSubPage]);
+
+  if (subPage === 'spacebyte')
+    return (
+      <div className='my-4 w-full'>
+        <SubPageHeader
+          parentLabel={_('Integrations')}
+          currentLabel='SpaceByte'
+          description={_(
+            'Sync your books, reading progress, annotations, settings, and other app data with SpaceByte.',
+          )}
+          onBack={() => setSubPage(null)}
+        />
+        <SpaceByteForm />
+      </div>
+    );
 
   // Sub-page wrapper matches the list-view's `my-4 w-full` so the
   // SubPageHeader's "Integrations" label lands at the exact same Y position
@@ -316,7 +298,7 @@ const IntegrationsPanel: React.FC = () => {
               </li>
               <li>
                 {_(
-                  'App settings, reading statistics, and dictionaries still sync through your Readest account while signed in.',
+                  'Use SpaceByte to sync app settings, reading statistics, dictionaries, and other app data.',
                 )}
               </li>
             </Tips>
@@ -346,7 +328,7 @@ const IntegrationsPanel: React.FC = () => {
               </li>
               <li>
                 {_(
-                  'App settings, reading statistics, and dictionaries still sync through your Readest account while signed in.',
+                  'Use SpaceByte to sync app settings, reading statistics, dictionaries, and other app data.',
                 )}
               </li>
             </Tips>
@@ -378,7 +360,7 @@ const IntegrationsPanel: React.FC = () => {
             {
               <li>
                 {_(
-                  'App settings, reading statistics, and dictionaries still sync through your Readest account while signed in.',
+                  'Use SpaceByte to sync app settings, reading statistics, dictionaries, and other app data.',
                 )}
               </li>
             }
@@ -420,7 +402,7 @@ const IntegrationsPanel: React.FC = () => {
               </li>
               <li>
                 {_(
-                  'App settings, reading statistics, and dictionaries still sync through your Readest account while signed in.',
+                  'Use SpaceByte to sync app settings, reading statistics, dictionaries, and other app data.',
                 )}
               </li>
             </Tips>
@@ -450,30 +432,12 @@ const IntegrationsPanel: React.FC = () => {
               </li>
               <li>
                 {_(
-                  'App settings, reading statistics, and dictionaries still sync through your Readest account while signed in.',
+                  'Use SpaceByte to sync app settings, reading statistics, dictionaries, and other app data.',
                 )}
               </li>
             </Tips>
           </div>
         )}
-      </div>
-    );
-  if (subPage === 'readest-cloud')
-    return (
-      <div className='my-4 w-full'>
-        <SubPageHeader
-          parentLabel={_('Integrations')}
-          currentLabel={_('Readest Cloud')}
-          description={_('Sync your library, reading progress, and highlights with Readest Cloud.')}
-          onBack={() => setSubPage(null)}
-        />
-        <BoxedList>
-          <NavigationRow
-            title={_('Account and Storage')}
-            status={_('Manage your plan and stored files')}
-            onClick={() => navigateToProfile(router)}
-          />
-        </BoxedList>
       </div>
     );
   if (subPage === 'readwise')
@@ -525,7 +489,14 @@ const IntegrationsPanel: React.FC = () => {
       </div>
     );
   if (subPage === 'data-flow')
-    return <DataFlowPage onBack={() => setSubPage(null)} onOpenSettings={setSubPage} />;
+    return (
+      <DataFlowPage
+        onBack={() => setSubPage(null)}
+        onOpenSettings={(id) => {
+          if (id !== 'readest-cloud') setSubPage(id);
+        }}
+      />
+    );
 
   if (subPage === 'send')
     return (
@@ -571,22 +542,28 @@ const IntegrationsPanel: React.FC = () => {
   const obsidianStatus =
     settings.obsidian?.enabled && settings.obsidian.folder ? _('On') : _('Off');
 
-  // Cloud sync providers are independently selectable (#5062): any subset of
-  // {Readest Cloud, WebDAV, Google Drive, S3, OneDrive, iCloud} can sync the
-  // library at once. A "configured" third-party provider (WebDAV creds / a Drive
-  // token) can be switched on inline; an unconfigured one must be opened to
-  // connect.
+  // Cloud sync providers are independently selectable. A configured provider
+  // can be switched on inline; an unconfigured one must be opened to connect.
   const providers = getCloudSyncProviders(settings);
-  const readestEnabled = isReadestCloudEnabled(settings);
-  const cloudGate = resolveCloudSyncGate(settings, userProfilePlan ?? 'free');
+  const cloudGate = resolveCloudSyncGate(settings);
   const enabledBackends = cloudGate.backends;
 
-  /** Book files have a home when Readest Cloud is on or some backend uploads them. */
+  /** Book files have a home when some other backend uploads them. */
   const booksBackedUpBy = (kind: FileSyncBackendKind): boolean =>
-    readestEnabled ||
     enabledBackends.some(
       (k) => k !== kind && (settings[settingsKeyForBackend(k)]?.syncBooks ?? false),
     );
+
+  const spacebyteConfigured = !!(settings.spacebyte?.apiKey && settings.spacebyte?.rootFolderId);
+  const spacebyteStatus = getThirdPartyRowStatus(_, {
+    enabled: !!settings.spacebyte?.enabled,
+    configured: spacebyteConfigured,
+    syncing: isSpaceByteSyncing,
+    paused: false,
+    lastError: spacebyteLastError,
+    syncBooks: settings.spacebyte?.syncBooks ?? true,
+    booksBackedUpElsewhere: booksBackedUpBy('spacebyte'),
+  });
 
   const webdavConfigured = !!(settings.webdav?.serverUrl && settings.webdav?.username);
   const gdriveConfigured = !!settings.googleDrive?.accountLabel;
@@ -644,12 +621,6 @@ const IntegrationsPanel: React.FC = () => {
     syncBooks: settings.icloud?.syncBooks ?? false,
     booksBackedUpElsewhere: booksBackedUpBy('icloud'),
   });
-  const readestStatus = getReadestCloudRowStatus(_, {
-    signedIn: !!user,
-    planLoading: userProfilePlan === undefined,
-    enabled: readestEnabled,
-  });
-
   const toggleCloudProvider = async (kind: CloudSyncProviderKind, next: boolean) => {
     await persistCloudProviderEnabled(envConfig, kind, next);
   };
@@ -788,17 +759,18 @@ const IntegrationsPanel: React.FC = () => {
           >
             <CloudProviderRow
               icon={RiCloudFill}
-              title={_('Readest Cloud')}
-              status={readestStatus}
-              checked={!!user && readestEnabled}
-              canToggle={!!user}
-              onToggle={(next) => toggleCloudProvider('readest', next)}
-              onOpen={() => (user ? setSubPage('readest-cloud') : navigateToLogin(router))}
-              toggleLabel={_('Sync with Readest Cloud')}
+              title='SpaceByte'
+              status={spacebyteStatus}
+              checked={!!settings.spacebyte?.enabled}
+              canToggle={canToggleCloudProvider({
+                isPremium: true,
+                isConfigured: spacebyteConfigured,
+                isEnabled: !!settings.spacebyte?.enabled,
+              })}
+              onToggle={(next) => toggleCloudProvider('spacebyte', next)}
+              onOpen={() => setSubPage('spacebyte')}
+              toggleLabel={_('Sync with SpaceByte')}
             />
-            {/* Third-party providers are premium: every row carries the tier
-                badge; on a free plan the checkbox is disabled and opening a
-                row routes to the upgrade page instead of the config sub-page. */}
             {(appService?.isDesktopApp ||
               appService?.isAndroidApp ||
               appService?.isIOSApp ||
@@ -808,17 +780,14 @@ const IntegrationsPanel: React.FC = () => {
                 icon={RiGoogleLine}
                 title={_('Google Drive')}
                 status={gdriveStatus}
-                badge={premiumBadge}
                 checked={!!settings.googleDrive?.enabled}
                 canToggle={canToggleCloudProvider({
-                  isPremium: isCloudSyncPremium,
+                  isPremium: true,
                   isConfigured: gdriveConfigured,
                   isEnabled: !!settings.googleDrive?.enabled,
                 })}
                 onToggle={(next) => toggleCloudProvider('gdrive', next)}
-                onOpen={() =>
-                  isCloudSyncPremium ? setSubPage('gdrive') : navigateToProfile(router)
-                }
+                onOpen={() => setSubPage('gdrive')}
                 toggleLabel={_('Sync with Google Drive')}
               />
             )}
@@ -826,30 +795,28 @@ const IntegrationsPanel: React.FC = () => {
               icon={RiCloudLine}
               title={_('WebDAV')}
               status={webdavStatus}
-              badge={premiumBadge}
               checked={!!settings.webdav?.enabled}
               canToggle={canToggleCloudProvider({
-                isPremium: isCloudSyncPremium,
+                isPremium: true,
                 isConfigured: webdavConfigured,
                 isEnabled: !!settings.webdav?.enabled,
               })}
               onToggle={(next) => toggleCloudProvider('webdav', next)}
-              onOpen={() => (isCloudSyncPremium ? setSubPage('webdav') : navigateToProfile(router))}
+              onOpen={() => setSubPage('webdav')}
               toggleLabel={_('Sync with WebDAV')}
             />
             <CloudProviderRow
               icon={RiDatabase2Line}
               title={_('S3 Storage')}
               status={s3Status}
-              badge={premiumBadge}
               checked={!!settings.s3?.enabled}
               canToggle={canToggleCloudProvider({
-                isPremium: isCloudSyncPremium,
+                isPremium: true,
                 isConfigured: s3Configured,
                 isEnabled: !!settings.s3?.enabled,
               })}
               onToggle={(next) => toggleCloudProvider('s3', next)}
-              onOpen={() => (isCloudSyncPremium ? setSubPage('s3') : navigateToProfile(router))}
+              onOpen={() => setSubPage('s3')}
               toggleLabel={_('Sync with S3')}
             />
             {(appService?.isDesktopApp ||
@@ -861,17 +828,14 @@ const IntegrationsPanel: React.FC = () => {
                 icon={RiMicrosoftLine}
                 title={_('OneDrive')}
                 status={onedriveStatus}
-                badge={premiumBadge}
                 checked={!!settings.onedrive?.enabled}
                 canToggle={canToggleCloudProvider({
-                  isPremium: isCloudSyncPremium,
+                  isPremium: true,
                   isConfigured: onedriveConfigured,
                   isEnabled: !!settings.onedrive?.enabled,
                 })}
                 onToggle={(next) => toggleCloudProvider('onedrive', next)}
-                onOpen={() =>
-                  isCloudSyncPremium ? setSubPage('onedrive') : navigateToProfile(router)
-                }
+                onOpen={() => setSubPage('onedrive')}
                 toggleLabel={_('Sync with OneDrive')}
               />
             )}
@@ -880,17 +844,14 @@ const IntegrationsPanel: React.FC = () => {
                 icon={RiAppleLine}
                 title={_('iCloud')}
                 status={icloudStatus}
-                badge={premiumBadge}
                 checked={!!settings.icloud?.enabled}
                 canToggle={canToggleCloudProvider({
-                  isPremium: isCloudSyncPremium,
+                  isPremium: true,
                   isConfigured: icloudAvailable,
                   isEnabled: !!settings.icloud?.enabled,
                 })}
                 onToggle={(next) => toggleCloudProvider('icloud', next)}
-                onOpen={() =>
-                  isCloudSyncPremium ? setSubPage('icloud') : navigateToProfile(router)
-                }
+                onOpen={() => setSubPage('icloud')}
                 toggleLabel={_('Sync with iCloud')}
               />
             )}
@@ -904,11 +865,7 @@ const IntegrationsPanel: React.FC = () => {
                   'Library sync is off. Your books, progress, and annotations stay on this device.',
                 )}
               </li>
-              <li>
-                {_(
-                  'App settings, reading statistics, and dictionaries still sync through your Readest account while signed in.',
-                )}
-              </li>
+              <li>{_('Configure SpaceByte to sync all supported app data across devices.')}</li>
             </Tips>
           </div>
         )}

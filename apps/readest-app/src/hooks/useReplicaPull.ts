@@ -3,7 +3,6 @@ import {
   replayBookshelfOperations,
 } from '@/services/bookshelves/persistence';
 import { useEffect } from 'react';
-import { useAuth } from '@/context/AuthContext';
 import { useEnv } from '@/context/EnvContext';
 import { useCustomDictionaryStore, findDictionaryByContentId } from '@/store/customDictionaryStore';
 import {
@@ -51,8 +50,8 @@ import {
   type ReplicaLocalRecord,
 } from '@/services/sync/replicaPullAndApply';
 import type { ReplicaAdapter } from '@/services/sync/replicaRegistry';
-import { getAccessToken } from '@/utils/access';
 import { isSyncCategoryEnabled } from '@/services/sync/syncCategories';
+import { isSpaceByteSyncConfigured } from '@/services/sync/spacebyteReplicaClient';
 import { uniqueId } from '@/utils/misc';
 import type { EnvConfigType } from '@/services/environment';
 import type { AppService, BaseDir } from '@/types/system';
@@ -123,11 +122,9 @@ let autoSyncContext: { service: AppService; envConfig: EnvConfigType } | null = 
 let autoSyncListenersInstalled = false;
 let periodicTimer: ReturnType<typeof setInterval> | null = null;
 let lastForegroundPullAt = 0;
-// Module-level mirror of `useAuth().user`. The auto-sync listeners run
-// at module scope and have no React access; they consult this flag to
-// short-circuit when there is no signed-in user (no point hitting
-// /api/sync — it would 401 anyway). Kept in sync by the hook.
-let hasCurrentUser = false;
+// Module-level mirror of the SpaceByte connection state. Auto-sync listeners
+// run at module scope and skip work until the provider is configured.
+let hasSyncBackend = false;
 // Shared promise for the boot-time settings pull. All other kinds'
 // boot pulls await this so applyRemoteSettings has a chance to seed
 // `lastPublishedFields` with server-authoritative values before
@@ -229,7 +226,7 @@ const buildReplicaPullDeps = <T extends ReplicaLocalRecord>(
     ? undefined
     : async () => {
         if (!isSyncCategoryEnabled(config.kind)) return false;
-        return !!(await getAccessToken());
+        return isSpaceByteSyncConfigured();
       },
 });
 
@@ -392,7 +389,7 @@ const runPullForKind = async (
       await replayBookshelfOperations(envConfig);
       // Batched rows already passed the category/auth gates and advanced the
       // cursor, so apply them even if those gates change after the fetch.
-      if (!pullOverride && (!isSyncCategoryEnabled('bookshelf') || !(await getAccessToken())))
+      if (!pullOverride && (!isSyncCategoryEnabled('bookshelf') || !isSpaceByteSyncConfigured()))
         return;
       const rows = await (pullOverride ? pullOverride() : ctx.manager.pull('bookshelf', pullOpts));
       await applyRemoteBookshelfRows(envConfig, rows);
@@ -518,7 +515,7 @@ const runPullForKind = async (
  * is already in flight, we skip the redundant call entirely.
  */
 const triggerIncrementalPullAll = (): void => {
-  if (!hasCurrentUser) return;
+  if (!hasSyncBackend) return;
   if (!autoSyncContext) return;
   const ctx = getReplicaSync();
   if (!ctx) return;
@@ -671,22 +668,25 @@ export const useReplicaPull = ({
   delayMs = REPLICA_PULL_DEFAULT_DELAY_MS,
 }: UseReplicaPullOpts): void => {
   const { envConfig, appService } = useEnv();
-  const { user } = useAuth();
+  const spacebyteConfigured = useSettingsStore(
+    (state) =>
+      !!(
+        state.settings.spacebyte?.enabled &&
+        state.settings.spacebyte.apiKey &&
+        state.settings.spacebyte.rootFolderId
+      ),
+  );
   // Stable cache key so the effect doesn't re-run when the caller
   // passes a freshly-allocated array literal each render.
   const kindsKey = kinds.join(',');
 
-  // Mirror the React-side auth state into the module-level flag the
-  // auto-sync listeners read. Kept in its own effect so a user ref
-  // change (Supabase TOKEN_REFRESHED reissues the user object on
-  // foreground / refresh) doesn't tear down the boot-pull effect.
   useEffect(() => {
-    hasCurrentUser = !!user;
-  }, [user]);
+    hasSyncBackend = spacebyteConfigured;
+  }, [spacebyteConfigured]);
 
   useEffect(() => {
     if (!appService) return;
-    if (!user) return;
+    if (!spacebyteConfigured) return;
 
     for (const kind of kinds) registeredKinds.add(kind);
 
@@ -793,7 +793,7 @@ export const useReplicaPull = ({
       if (unsubscribe) unsubscribe();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [kindsKey, appService, envConfig, delayMs, user]);
+  }, [kindsKey, appService, envConfig, delayMs, spacebyteConfigured]);
 };
 
 /** Test seam — clear all module-level state and tear down listeners. */
@@ -816,5 +816,5 @@ export const __resetReplicaPullForTests = (): void => {
   autoSyncListenersInstalled = false;
   lastForegroundPullAt = 0;
   settingsBootPullPromise = null;
-  hasCurrentUser = false;
+  hasSyncBackend = false;
 };

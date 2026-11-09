@@ -35,6 +35,7 @@ import {
   S3Settings,
   OneDriveSettings,
   ICloudSettings,
+  SpaceByteSettings,
 } from '@/types/settings';
 import { UserStorageQuota, UserDailyTranslationQuota, UserDailyTTSQuota } from '@/types/quota';
 import { getDefaultMaxBlockSize, getDefaultMaxInlineSize } from '@/utils/config';
@@ -227,6 +228,17 @@ export const DEFAULT_ICLOUD_SETTINGS = {
   lastSyncedAt: 0,
 } as ICloudSettings;
 
+export const DEFAULT_SPACEBYTE_SETTINGS = {
+  enabled: false,
+  apiKey: '',
+  syncProgress: true,
+  syncNotes: true,
+  syncBooks: true,
+  strategy: 'silent',
+  deviceId: '',
+  lastSyncedAt: 0,
+} as SpaceByteSettings;
+
 export const DEFAULT_SYSTEM_SETTINGS: Partial<SystemSettings> = {
   keepLogin: false,
   alwaysOnTop: false,
@@ -299,6 +311,7 @@ export const DEFAULT_SYSTEM_SETTINGS: Partial<SystemSettings> = {
   s3: DEFAULT_S3_SETTINGS,
   onedrive: DEFAULT_ONEDRIVE_SETTINGS,
   icloud: DEFAULT_ICLOUD_SETTINGS,
+  spacebyte: DEFAULT_SPACEBYTE_SETTINGS,
   aiSettings: DEFAULT_AI_SETTINGS,
 
   lastSyncedAtBooks: 0,

@@ -377,6 +377,20 @@ export interface ICloudSettings {
   providerSelectedAt?: number;
 }
 
+export interface SpaceByteSettings {
+  enabled: boolean;
+  apiKey: string;
+  rootFolderId?: number;
+  syncProgress?: boolean;
+  syncNotes?: boolean;
+  syncBooks?: boolean;
+  fullSync?: boolean;
+  strategy?: KOSyncStrategy;
+  deviceId?: string;
+  lastSyncedAt?: number;
+  providerSelectedAt?: number;
+}
+
 /**
  * Readest Cloud's own library-sync switch. Readest Cloud used to be the
  * derived fallback — "on" whenever no third-party provider was enabled —
@@ -639,6 +653,7 @@ export interface SystemSettings {
   s3: S3Settings;
   onedrive: OneDriveSettings;
   icloud: ICloudSettings;
+  spacebyte: SpaceByteSettings;
 
   aiSettings: AISettings;
   /**

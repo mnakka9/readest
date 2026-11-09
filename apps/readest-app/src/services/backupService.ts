@@ -90,6 +90,9 @@ export const BACKUP_SETTINGS_BLACKLIST = [
   'icloud.deviceId',
   'icloud.lastSyncedAt',
   'icloud.providerSelectedAt',
+  'spacebyte.deviceId',
+  'spacebyte.lastSyncedAt',
+  'spacebyte.providerSelectedAt',
   'readestCloud.disabledAt',
   // Transient runtime state — book keys may not exist post-restore; screen
   // brightness is live device state.
@@ -129,6 +132,7 @@ export const BACKUP_SETTINGS_CREDENTIAL_FIELDS = [
   // unencrypted backup zips unless the user opts into including credentials.
   's3.accessKeyId',
   's3.secretAccessKey',
+  'spacebyte.apiKey',
   'aiSettings.aiGatewayApiKey',
   'aiSettings.openrouterApiKey',
 ] as const;

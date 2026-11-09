@@ -33,6 +33,7 @@ export const SETTINGS_SYNC_EVENT = 'global-settings-window-sync';
  * switch could win and silently flip the selection back).
  */
 export interface CloudSyncProviderFlags {
+  spacebyte?: { enabled: boolean; providerSelectedAt?: number };
   webdav: { enabled: boolean; providerSelectedAt?: number };
   googleDrive: { enabled: boolean; providerSelectedAt?: number };
   /** Optional: absent on payloads from pre-S3 windows (treated as unchanged). */
@@ -85,6 +86,9 @@ export const mergeSyncedGlobalSettings = (
   if (payload.bookshelves)
     merged.bookshelves = mergeBookshelfStates(local.bookshelves, payload.bookshelves);
   if (payload.cloudSyncProviders) {
+    if (payload.cloudSyncProviders.spacebyte) {
+      merged.spacebyte = { ...local.spacebyte, ...payload.cloudSyncProviders.spacebyte };
+    }
     merged.webdav = { ...local.webdav, ...payload.cloudSyncProviders.webdav };
     merged.googleDrive = { ...local.googleDrive, ...payload.cloudSyncProviders.googleDrive };
     if (payload.cloudSyncProviders.s3) {
@@ -125,6 +129,10 @@ export const broadcastGlobalSettings = async (
     };
     if (opts.includeCloudSyncProviders) {
       payload.cloudSyncProviders = {
+        spacebyte: {
+          enabled: !!settings.spacebyte?.enabled,
+          providerSelectedAt: settings.spacebyte?.providerSelectedAt,
+        },
         webdav: {
           enabled: !!settings.webdav?.enabled,
           providerSelectedAt: settings.webdav?.providerSelectedAt,

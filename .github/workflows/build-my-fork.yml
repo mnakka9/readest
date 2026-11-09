@@ -1,0 +1,117 @@
+# Build workflow for fork builds
+# Mirrors the upstream release.yml structure but without requiring
+# code signing keys, Sentry DSN, PostHog, Supabase, or any secrets.
+
+name: Build Fork
+
+on:
+  push:
+    branches: [main, feat/*, build/*]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      arch:
+        description: 'Android Target Architecture (aarch64 is recommended for most devices)'
+        required: true
+        default: 'aarch64'
+        type: choice
+        options:
+          - aarch64
+          - all
+
+permissions:
+  contents: read
+
+jobs:
+  build-android:
+    name: Android APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - run: git submodule update --init --recursive
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools'
+
+      - name: Install NDK
+        run: sdkmanager "ndk;28.2.13676358"
+
+      - run: pnpm install --frozen-lockfile --prefer-offline
+      - run: pnpm --filter @readest/readest-app setup-vendors
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ubuntu-latest-android-cargo
+
+      - name: Setup environment
+        run: |
+          echo "NEXT_PUBLIC_APP_PLATFORM=tauri" >> apps/readest-app/.env.local
+
+      - name: Build Tauri Android APK
+        shell: bash
+        working-directory: apps/readest-app
+        env:
+          NODE_OPTIONS: '--max-old-space-size=8192'
+          NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/28.2.13676358
+        run: |
+          rm -rf src-tauri/gen/android
+          pnpm tauri android init
+          pnpm tauri icon ../../data/icons/readest-book.png
+          git checkout .
+          
+          # Generate a keystore so release APK is signed and can be directly installed on Android
+          keytool -genkeypair -v -keystore "$RUNNER_TEMP/keystore.jks" \
+            -alias readest -keyalg RSA -keysize 2048 -validity 10000 \
+            -storepass readest -keypass readest \
+            -dname "CN=Readest, OU=Fork, O=Readest, L=Fork, S=Fork, C=US"
+          cat << 'EOF' > src-tauri/gen/android/keystore.properties
+keyAlias=readest
+password=readest
+EOF
+          echo "storeFile=$RUNNER_TEMP/keystore.jks" >> src-tauri/gen/android/keystore.properties
+          
+          ARCH="${{ github.event.inputs.arch || 'aarch64' }}"
+          echo "Target architecture: $ARCH"
+          if [ "$ARCH" = "aarch64" ]; then
+            pnpm tauri android build -t aarch64
+          else
+            pnpm tauri android build
+          fi
+
+          mkdir -p dist/android
+          find src-tauri/gen/android -name "*.apk" -exec cp -v {} dist/android/ \;
+
+      - name: List APKs
+        shell: bash
+        run: |
+          echo "=== Generated APKs ==="
+          ls -lh apps/readest-app/dist/android/ || ls -lh apps/readest-app/src-tauri/gen/android/app/build/outputs/apk/
+
+      - name: Upload Android APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: readest-apk
+          path: apps/readest-app/dist/android/*.apk
+          if-no-files-found: error

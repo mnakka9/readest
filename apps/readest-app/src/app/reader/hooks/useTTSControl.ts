@@ -409,7 +409,7 @@ export const useTTSControl = ({ bookKey, onRequestHidePanel }: UseTTSControlProp
     };
     const handleQuotaExceeded = () => {
       eventDispatcher.dispatch('toast', {
-        message: _('Daily TTS limit reached. Upgrade your plan or try again tomorrow.'),
+        message: _('Daily TTS limit reached. Try again tomorrow.'),
         type: 'error',
         timeout: 5000,
       });

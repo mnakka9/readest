@@ -25,7 +25,7 @@ import { DEFAULT_STATS_TRACKING_CONFIG, type StatBook } from '@/types/statistics
 import type { TTSSession } from '@/services/tts/TTSSessionManager';
 import type { TTSController } from '@/services/tts/TTSController';
 import type { FoliateView } from '@/types/view';
-import { getAccessToken } from '@/utils/access';
+import { isSpaceByteSyncConfigured } from '@/services/sync/spacebyteReplicaClient';
 import { StatisticsDb } from './statisticsDb';
 import { pushStats } from './statsSync';
 import { TrackerCore, type FlushedEvent } from './trackerCore';
@@ -341,10 +341,7 @@ export class TtsStatsRecorder {
 
   async #push(): Promise<void> {
     const db = this.#db;
-    if (!db || !isSyncCategoryEnabled('stats')) return;
-    // No AuthContext headless, so the session token stands in for `user`.
-    const token = await getAccessToken().catch(() => null);
-    if (!token) return;
+    if (!db || !isSyncCategoryEnabled('stats') || !isSpaceByteSyncConfigured()) return;
     try {
       await pushStats(db, new SyncClient());
     } catch (err) {

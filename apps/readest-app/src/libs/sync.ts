@@ -1,9 +1,7 @@
 import { Book, BookConfig, BookNote, BookDataRecord } from '@/types/book';
-import { getAPIBaseUrl } from '@/services/environment';
-import { getAccessToken } from '@/utils/access';
-import { fetchWithTimeout } from '@/utils/fetch';
+import { getSpaceByteFileProvider } from '@/services/sync/spacebyteReplicaClient';
 
-const SYNC_API_ENDPOINT = getAPIBaseUrl() + '/sync';
+const SPACEBYTE_STATS_PATH = '/Readest/statistics.json';
 
 export type SyncType = 'books' | 'configs' | 'notes' | 'stats';
 export type SyncOp = 'push' | 'pull' | 'both';
@@ -53,7 +51,38 @@ export interface SyncData {
   statPages?: StatPageRecord[];
 }
 
+const emptyResult = (): SyncResult => ({
+  books: [],
+  notes: [],
+  configs: [],
+  statBooks: [],
+  statPages: [],
+});
+
+const readStats = async (): Promise<{
+  statBooks: StatBookRecord[];
+  statPages: StatPageRecord[];
+}> => {
+  const provider = await getSpaceByteFileProvider();
+  const raw = await provider.readText(SPACEBYTE_STATS_PATH);
+  if (!raw) return { statBooks: [], statPages: [] };
+  try {
+    const parsed = JSON.parse(raw) as {
+      statBooks?: StatBookRecord[];
+      statPages?: StatPageRecord[];
+    };
+    return {
+      statBooks: parsed.statBooks ?? [],
+      statPages: parsed.statPages ?? [],
+    };
+  } catch {
+    return { statBooks: [], statPages: [] };
+  }
+};
+
 export class SyncClient {
+  private static writeChain: Promise<void> = Promise.resolve();
+
   /**
    * Pull incremental changes since a given timestamp (in ms).
    * Returns updated or deleted records since that time.
@@ -65,27 +94,17 @@ export class SyncClient {
     metaHash?: string,
     limit?: number,
   ): Promise<SyncResult> {
-    const token = await getAccessToken();
-    if (!token) throw new Error('Not authenticated');
-
-    const limitParam = limit && limit > 0 ? `&limit=${encodeURIComponent(limit)}` : '';
-    const url = `${SYNC_API_ENDPOINT}?since=${encodeURIComponent(since)}&type=${type ?? ''}&book=${book ?? ''}&meta_hash=${metaHash ?? ''}${limitParam}`;
-    const res = await fetchWithTimeout(
-      url,
-      {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      },
-      15000,
-    );
-
-    if (!res.ok) {
-      const error = await res.json();
-      throw new Error(`Failed to pull changes: ${error.error || res.statusText}`);
-    }
-
-    return res.json();
+    void book;
+    void metaHash;
+    if (type !== 'stats') return emptyResult();
+    const data = await readStats();
+    const statPages = data.statPages
+      .filter((record) => (record.updated_at_ms ?? 0) > since)
+      .sort((a, b) => (a.updated_at_ms ?? 0) - (b.updated_at_ms ?? 0))
+      .slice(0, limit && limit > 0 ? limit : undefined);
+    const hashes = new Set(statPages.map((record) => record.book_hash));
+    const statBooks = data.statBooks.filter((record) => hashes.has(record.book_hash));
+    return { ...emptyResult(), statBooks, statPages };
   }
 
   /**
@@ -93,27 +112,44 @@ export class SyncClient {
    * Uses last-writer-wins logic as implemented on the server side.
    */
   async pushChanges(payload: SyncData): Promise<SyncResult> {
-    const token = await getAccessToken();
-    if (!token) throw new Error('Not authenticated');
-
-    const res = await fetchWithTimeout(
-      SYNC_API_ENDPOINT,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(payload),
-      },
-      15000,
-    );
-
-    if (!res.ok) {
-      const error = await res.json();
-      throw new Error(`Failed to push changes: ${error.error || res.statusText}`);
+    if (!payload.statBooks?.length && !payload.statPages?.length) return emptyResult();
+    const previous = SyncClient.writeChain;
+    let release!: () => void;
+    SyncClient.writeChain = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await previous;
+    try {
+      const provider = await getSpaceByteFileProvider();
+      const current = await readStats();
+      const now = Date.now();
+      const books = new Map(current.statBooks.map((record) => [record.book_hash, record]));
+      for (const record of payload.statBooks ?? []) {
+        books.set(record.book_hash, { ...record, updated_at_ms: now });
+      }
+      const pages = new Map(
+        current.statPages.map((record) => [
+          `${record.book_hash}:${record.page}:${record.start_time}`,
+          record,
+        ]),
+      );
+      for (const record of payload.statPages ?? []) {
+        pages.set(`${record.book_hash}:${record.page}:${record.start_time}`, {
+          ...record,
+          updated_at_ms: now,
+        });
+      }
+      await provider.ensureDir(['/Readest']);
+      await provider.writeText(
+        SPACEBYTE_STATS_PATH,
+        JSON.stringify({
+          statBooks: [...books.values()],
+          statPages: [...pages.values()],
+        }),
+      );
+      return emptyResult();
+    } finally {
+      release();
     }
-
-    return res.json();
   }
 }

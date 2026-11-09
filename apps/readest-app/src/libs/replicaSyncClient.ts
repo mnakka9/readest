@@ -3,6 +3,7 @@ import { getAPIBaseUrl } from '@/services/environment';
 import { SyncError } from '@/libs/errors';
 import type { Hlc, ReplicaRow } from '@/types/replica';
 import type { SyncErrorCode } from '@/libs/errors';
+import { spaceByteReplicaSyncClient } from '@/services/sync/spacebyteReplicaClient';
 
 const ENDPOINT = () => `${getAPIBaseUrl()}/sync/replicas`;
 const KEYS_ENDPOINT = () => `${getAPIBaseUrl()}/sync/replica-keys`;
@@ -276,4 +277,4 @@ export class ReplicaSyncClient {
   }
 }
 
-export const replicaSyncClient = new ReplicaSyncClient();
+export const replicaSyncClient = spaceByteReplicaSyncClient;

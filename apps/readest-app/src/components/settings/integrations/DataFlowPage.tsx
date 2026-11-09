@@ -67,6 +67,7 @@ const ICONS: Record<ConnectorId, React.ElementType> = {
   opds: RiRssLine,
   localsend: RiWifiLine,
   send: RiSendPlaneLine,
+  spacebyte: RiCloudLine,
   webdav: RiCloudLine,
   gdrive: RiGoogleLine,
   s3: RiDatabase2Line,

@@ -9,7 +9,6 @@ import {
 import {
   downloadFile,
   uploadFile,
-  uploadReplicaFile,
   deleteFile as deleteCloudFile,
   listAllFiles,
   purgeFiles,
@@ -22,6 +21,8 @@ import { CLOUD_BOOKS_SUBDIR, CLOUD_REPLICAS_SUBDIR } from './constants';
 import { isBookFileContentSource, resolveBookContentSource } from './bookContent';
 import { getAbsOfflineDir } from '@/utils/audiobook';
 import { isBookDataFileKey } from '@/utils/bookDataKey';
+import { ancestorsOf } from '@/services/sync/file/layout';
+import { getSpaceByteFileProvider } from '@/services/sync/spacebyteReplicaClient';
 
 // A book's synced data (downloaded TTS packs) sits under its cloud folder by
 // content name, so it is found by listing, not by name. Best-effort.
@@ -158,14 +159,18 @@ export async function uploadReplicaFileToCloud(
   },
 ): Promise<void> {
   const cfp = `${CLOUD_REPLICAS_SUBDIR}/${opts.kind}/${opts.replicaId}/${opts.filename}`;
-  console.log('Uploading replica file:', opts.lfp, 'to', cfp);
+  console.log('Uploading replica file to SpaceByte:', opts.lfp, 'to', cfp);
   const file = await fs.openFile(opts.lfp, opts.base, opts.filename);
-  const localFullpath = await resolveFilePath(opts.lfp, opts.base);
-  await uploadReplicaFile(file, localFullpath, cfp, opts.kind, opts.replicaId, opts.onProgress);
+  const provider = await getSpaceByteFileProvider();
+  const remotePath = `/${cfp}`;
+  await provider.ensureDir(ancestorsOf(remotePath));
+  await provider.writeBinary(remotePath, await file.arrayBuffer());
   const f = file as ClosableFile;
   if (f && f.close) {
     await f.close();
   }
+  void resolveFilePath;
+  void opts.onProgress;
 }
 
 // Cloud key for a replica binary. Centralized so adapters and the
@@ -184,12 +189,11 @@ export async function downloadReplicaFileFromCloud(
   },
 ): Promise<void> {
   const cfp = replicaCloudKey(opts.kind, opts.replicaId, opts.filename);
-  await downloadFile({
-    appService,
-    cfp,
-    dst: opts.dst,
-    onProgress: opts.onProgress,
-  });
+  const provider = await getSpaceByteFileProvider();
+  const data = await provider.readBinary(`/${cfp}`);
+  if (!data) throw new Error(`SpaceByte replica file not found: ${cfp}`);
+  await appService.writeFile(opts.dst, 'None', data);
+  void opts.onProgress;
 }
 
 export async function deleteReplicaBundleFromCloud(
@@ -197,14 +201,10 @@ export async function deleteReplicaBundleFromCloud(
   replicaId: string,
   filenames: string[],
 ): Promise<void> {
-  for (const filename of filenames) {
-    const cfp = replicaCloudKey(kind, replicaId, filename);
-    try {
-      await deleteCloudFile(cfp);
-    } catch (error) {
-      console.log(`Failed to delete replica file ${cfp}:`, error);
-    }
-  }
+  const provider = await getSpaceByteFileProvider();
+  const directory = `/${CLOUD_REPLICAS_SUBDIR}/${kind}/${replicaId}`;
+  await provider.deleteDir(directory);
+  void filenames;
 }
 
 export async function uploadBook(

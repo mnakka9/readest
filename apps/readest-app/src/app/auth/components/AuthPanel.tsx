@@ -1,4 +1,3 @@
-import { useRef } from 'react';
 import Image from 'next/image';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { FcGoogle } from 'react-icons/fc';
@@ -6,7 +5,6 @@ import { FaApple, FaGithub, FaDiscord } from 'react-icons/fa';
 import { useTranslation } from '@/hooks/useTranslation';
 import { ProviderLogin, type OAuthProvider } from './ProviderLogin';
 import EmailPasswordAuth from './EmailPasswordAuth';
-import ReadestCloudOptIn from './ReadestCloudOptIn';
 
 interface AuthPanelProps {
   supabaseClient: SupabaseClient;
@@ -22,14 +20,6 @@ export default function AuthPanel({
   onProviderSignIn,
 }: AuthPanelProps) {
   const _ = useTranslation();
-  // `signInWithOAuth` redirects the whole page on web, which can cut off the
-  // opt-in's settings write. Hold sign-in until it has landed. Null until the
-  // user actually touches the checkbox, so the common path adds no delay.
-  const pendingCloudChoice = useRef<Promise<unknown> | null>(null);
-  const handleProviderSignIn = async (provider: OAuthProvider) => {
-    await pendingCloudChoice.current;
-    return onProviderSignIn(provider);
-  };
 
   return (
     <div className='flex w-full max-w-sm flex-col items-center gap-6'>
@@ -38,32 +28,32 @@ export default function AuthPanel({
         <div>
           <h1 className='text-xl font-semibold tracking-tight'>{_('Sign in to Readest')}</h1>
           <p className='text-base-content/70 mt-1.5 text-sm leading-relaxed'>
-            {_('Sync your library, reading progress, and highlights across your devices.')}
+            {_('Access your Readest account.')}
           </p>
         </div>
       </div>
       <div className='flex w-full flex-col gap-2.5'>
         <ProviderLogin
           provider='google'
-          handleSignIn={handleProviderSignIn}
+          handleSignIn={onProviderSignIn}
           Icon={FcGoogle}
           label={_('Sign in with {{provider}}', { provider: 'Google' })}
         />
         <ProviderLogin
           provider='apple'
-          handleSignIn={handleProviderSignIn}
+          handleSignIn={onProviderSignIn}
           Icon={FaApple}
           label={_('Sign in with {{provider}}', { provider: 'Apple' })}
         />
         <ProviderLogin
           provider='github'
-          handleSignIn={handleProviderSignIn}
+          handleSignIn={onProviderSignIn}
           Icon={FaGithub}
           label={_('Sign in with {{provider}}', { provider: 'GitHub' })}
         />
         <ProviderLogin
           provider='discord'
-          handleSignIn={handleProviderSignIn}
+          handleSignIn={onProviderSignIn}
           Icon={FaDiscord}
           label={_('Sign in with {{provider}}', { provider: 'Discord' })}
         />
@@ -77,11 +67,6 @@ export default function AuthPanel({
         supabaseClient={supabaseClient}
         redirectTo={redirectTo}
         magicLink={magicLink}
-      />
-      <ReadestCloudOptIn
-        onPendingWrite={(write) => {
-          pendingCloudChoice.current = write;
-        }}
       />
     </div>
   );

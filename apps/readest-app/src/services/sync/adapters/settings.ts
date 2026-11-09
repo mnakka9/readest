@@ -103,6 +103,8 @@ export const SETTINGS_WHITELIST = [
   's3.bucket',
   's3.accessKeyId',
   's3.secretAccessKey',
+  'spacebyte.apiKey',
+  'spacebyte.rootFolderId',
 ] as const;
 
 /**
@@ -173,6 +175,7 @@ export const SETTINGS_ENCRYPTED_FIELDS = [
   'webdav.password',
   's3.accessKeyId',
   's3.secretAccessKey',
+  'spacebyte.apiKey',
 ] as const;
 
 export type SettingsWhitelistKey = (typeof SETTINGS_WHITELIST)[number];

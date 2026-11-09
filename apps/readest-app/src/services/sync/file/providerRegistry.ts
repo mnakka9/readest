@@ -13,15 +13,16 @@
 import type { FileSyncProvider } from './provider';
 import { withTransferLog } from './transferLog';
 import { buildBasePath, SYNC_LIBRARY_FILE } from './layout';
-import type { S3Settings, WebDAVSettings } from '@/types/settings';
+import type { S3Settings, SpaceByteSettings, WebDAVSettings } from '@/types/settings';
 import { createWebDAVProvider } from '@/services/sync/providers/webdav/WebDAVProvider';
 import { checkConnection as checkWebDAVConnection } from '@/services/sync/providers/webdav/client';
 import { buildGoogleDriveProvider } from '@/services/sync/providers/gdrive/buildGoogleDriveProvider';
 import { buildOneDriveProvider } from '@/services/sync/providers/onedrive/buildOneDriveProvider';
 import { buildICloudProvider } from '@/services/sync/providers/icloud/buildICloudProvider';
 import { createS3Provider } from '@/services/sync/providers/s3/S3Provider';
+import { createSpaceByteProvider } from '@/services/sync/providers/spacebyte/SpaceByteProvider';
 
-export type FileSyncBackendKind = 'webdav' | 'gdrive' | 's3' | 'onedrive' | 'icloud';
+export type FileSyncBackendKind = 'spacebyte' | 'webdav' | 'gdrive' | 's3' | 'onedrive' | 'icloud';
 
 /** Minimal settings the registry reads to pick + build backends. */
 export interface FileSyncBackendsSettings {
@@ -30,6 +31,7 @@ export interface FileSyncBackendsSettings {
   s3?: S3Settings;
   onedrive?: { enabled?: boolean };
   icloud?: { enabled?: boolean };
+  spacebyte?: SpaceByteSettings;
 }
 
 /**
@@ -64,6 +66,10 @@ const providerCacheKey = (
   if (kind === 's3') {
     const c = settings.s3;
     return `s3:${c?.enabled}:${c?.endpoint}:${c?.region}:${c?.bucket}:${c?.accessKeyId}:${c?.secretAccessKey}`;
+  }
+  if (kind === 'spacebyte') {
+    const c = settings.spacebyte;
+    return `spacebyte:${c?.enabled}:${c?.apiKey}:${c?.rootFolderId}`;
   }
   if (kind === 'onedrive') return 'onedrive';
   if (kind === 'icloud') return 'icloud';
@@ -120,19 +126,26 @@ const getFileSyncProvider = async (
   const cached = providerCache.get(kind);
   if (cached?.key === key) return cached;
   const provider =
-    kind === 'webdav'
-      ? settings.webdav
-        ? createWebDAVProvider(settings.webdav)
+    kind === 'spacebyte'
+      ? settings.spacebyte?.apiKey && settings.spacebyte.rootFolderId
+        ? createSpaceByteProvider({
+            apiKey: settings.spacebyte.apiKey,
+            rootFolderId: settings.spacebyte.rootFolderId,
+          })
         : null
-      : kind === 's3'
-        ? settings.s3
-          ? createS3Provider(settings.s3)
+      : kind === 'webdav'
+        ? settings.webdav
+          ? createWebDAVProvider(settings.webdav)
           : null
-        : kind === 'onedrive'
-          ? await buildOneDriveProvider()
-          : kind === 'icloud'
-            ? await buildICloudProvider()
-            : await buildGoogleDriveProvider();
+        : kind === 's3'
+          ? settings.s3
+            ? createS3Provider(settings.s3)
+            : null
+          : kind === 'onedrive'
+            ? await buildOneDriveProvider()
+            : kind === 'icloud'
+              ? await buildICloudProvider()
+              : await buildGoogleDriveProvider();
   if (!provider) return null;
   const entry = { key, provider, logged: withTransferLog(provider, kind) };
   providerCache.set(kind, entry);

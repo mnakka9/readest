@@ -20,22 +20,24 @@ export type CloudSyncProviderKind = 'readest' | FileSyncBackendKind;
 /** Settings slice key for a third-party backend kind. */
 export const settingsKeyForBackend = (
   kind: FileSyncBackendKind,
-): 'webdav' | 'googleDrive' | 's3' | 'onedrive' | 'icloud' =>
+): 'spacebyte' | 'webdav' | 'googleDrive' | 's3' | 'onedrive' | 'icloud' =>
   kind === 'gdrive' ? 'googleDrive' : kind;
 
 /** Human-readable provider name (product names — deliberately untranslated). */
 export const cloudProviderDisplayName = (kind: CloudSyncProviderKind): string =>
-  kind === 'gdrive'
-    ? 'Google Drive'
-    : kind === 'webdav'
-      ? 'WebDAV'
-      : kind === 's3'
-        ? 'S3'
-        : kind === 'onedrive'
-          ? 'OneDrive'
-          : kind === 'icloud'
-            ? 'iCloud'
-            : 'Readest Cloud';
+  kind === 'spacebyte'
+    ? 'SpaceByte'
+    : kind === 'gdrive'
+      ? 'Google Drive'
+      : kind === 'webdav'
+        ? 'WebDAV'
+        : kind === 's3'
+          ? 'S3'
+          : kind === 'onedrive'
+            ? 'OneDrive'
+            : kind === 'icloud'
+              ? 'iCloud'
+              : 'Readest Cloud';
 
 /**
  * The third-party backends the user has switched on, in a STABLE order that
@@ -45,6 +47,7 @@ export const getEnabledFileSyncBackends = (
   settings: SystemSettings | null | undefined,
 ): FileSyncBackendKind[] => {
   const enabled: FileSyncBackendKind[] = [];
+  if (settings?.spacebyte?.enabled) enabled.push('spacebyte');
   if (settings?.webdav?.enabled) enabled.push('webdav');
   if (settings?.googleDrive?.enabled) enabled.push('gdrive');
   if (settings?.s3?.enabled) enabled.push('s3');
@@ -67,16 +70,13 @@ export const hasAnyThirdPartyEnabled = (settings: SystemSettings | null | undefi
  * Cloud. Once the user touches a Cloud Sync checkbox the flag is explicit and
  * wins.
  */
-export const isReadestCloudEnabled = (settings: SystemSettings | null | undefined): boolean =>
-  settings?.readestCloud?.enabled ?? !hasAnyThirdPartyEnabled(settings);
+export const isReadestCloudEnabled = (_settings: SystemSettings | null | undefined): boolean =>
+  false;
 
 /** Every provider syncing the library on this device, Readest Cloud first. */
 export const getCloudSyncProviders = (
   settings: SystemSettings | null | undefined,
-): CloudSyncProviderKind[] => [
-  ...(isReadestCloudEnabled(settings) ? (['readest'] as const) : []),
-  ...getEnabledFileSyncBackends(settings),
-];
+): CloudSyncProviderKind[] => getEnabledFileSyncBackends(settings);
 
 /** Comma-joined product names, for the "Synced via {{provider}}" copy. */
 export const cloudProvidersDisplayName = (kinds: CloudSyncProviderKind[]): string =>
@@ -171,6 +171,12 @@ export const applySyncBooksAutoEnable = (settings: SystemSettings): boolean => {
           changed = true;
         }
         break;
+      case 'spacebyte':
+        if (settings.spacebyte && !settings.spacebyte.syncBooks) {
+          settings.spacebyte = { ...settings.spacebyte, syncBooks: true };
+          changed = true;
+        }
+        break;
       case 'gdrive':
         if (settings.googleDrive && !settings.googleDrive.syncBooks) {
           settings.googleDrive = { ...settings.googleDrive, syncBooks: true };
@@ -208,6 +214,6 @@ export const applySyncBooksAutoEnable = (settings: SystemSettings): boolean => {
  * separately by the Manage Sync "book" toggle and the transfer queue.
  */
 export const isReadestCloudStorageActive = (
-  settings: SystemSettings | null | undefined,
+  _settings: SystemSettings | null | undefined,
   _plan?: UserPlan,
-): boolean => isReadestCloudEnabled(settings);
+): boolean => false;

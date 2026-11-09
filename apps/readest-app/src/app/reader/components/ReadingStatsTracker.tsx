@@ -4,7 +4,6 @@ import { useEffect, useRef } from 'react';
 import { getBookProgress, useBookProgress } from '@/store/readerProgressStore';
 import { useBookDataStore } from '@/store/bookDataStore';
 import { useEnv } from '@/context/EnvContext';
-import { useAuth } from '@/context/AuthContext';
 import { StatisticsDb } from '@/services/statistics/statisticsDb';
 import { TrackerCore, type FlushedEvent } from '@/services/statistics/trackerCore';
 import { getBookHashFromKey, ttsSessionManager } from '@/services/tts/TTSSessionManager';
@@ -17,6 +16,7 @@ import { GrimmorySyncStore } from '@/services/grimmory/GrimmorySyncStore';
 import { pushStatsToGrimmory } from '@/services/grimmory/statsPush';
 import { pushStats, pullStats } from '@/services/statistics/statsSync';
 import { isSyncCategoryEnabled } from '@/services/sync/syncCategories';
+import { isSpaceByteSyncConfigured } from '@/services/sync/spacebyteReplicaClient';
 import { useSettingsStore } from '@/store/settingsStore';
 import { eventDispatcher } from '@/utils/event';
 
@@ -35,7 +35,6 @@ export default function ReadingStatsTracker({ bookKey }: { bookKey: string }) {
   const progress = useBookProgress(bookKey);
   // booksData is keyed by book id = bookKey.split('-')[0].
   const getBookData = useBookDataStore((s) => s.getBookData);
-  const { user } = useAuth();
   const coreRef = useRef(new TrackerCore(DEFAULT_STATS_TRACKING_CONFIG));
   const dbRef = useRef<StatisticsDb | null>(null);
   const idleRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -58,7 +57,7 @@ export default function ReadingStatsTracker({ bookKey }: { bookKey: string }) {
   // Book.author is the single-string author field; upsertBook takes authors: string.
   const authors = book?.author ?? '';
 
-  const syncEnabled = () => !!user && isSyncCategoryEnabled('stats');
+  const syncEnabled = () => isSpaceByteSyncConfigured() && isSyncCategoryEnabled('stats');
 
   // BookOrbit stats push needs no Readest account — only the integration.
   const bookOrbitStatsPush = (db: StatisticsDb): Promise<unknown> | undefined => {

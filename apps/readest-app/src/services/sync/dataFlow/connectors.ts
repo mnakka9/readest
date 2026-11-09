@@ -24,12 +24,9 @@ import { canBackendRun } from '@/services/sync/file/runLibrarySync';
 import {
   cloudProviderDisplayName,
   getActiveFileSyncBackends,
-  isReadestCloudEnabled,
   settingsKeyForBackend,
 } from '@/services/sync/cloudSyncProvider';
 import { KOSyncClient } from '@/services/sync/KOSyncClient';
-import { isSyncCategoryEnabled } from '@/services/sync/syncCategories';
-import { SyncClient } from '@/libs/sync';
 import { useLocalSendStore } from '@/store/localsendStore';
 import { useSettingsStore } from '@/store/settingsStore';
 import { fetchWithAuth } from '@/utils/fetch';
@@ -186,26 +183,8 @@ const readingConnectors = ({ settings, envConfig }: ConnectorContext): FlowConne
   return connectors;
 };
 
-const cloudConnectors = ({ settings, signedIn, plan }: ConnectorContext): FlowConnector[] => {
+const cloudConnectors = ({ settings, plan }: ConnectorContext): FlowConnector[] => {
   const connectors: FlowConnector[] = [];
-  if (signedIn && isReadestCloudEnabled(settings)) {
-    const kinds: FlowKind[] = [
-      ...(isSyncCategoryEnabled('configs') ? (['progress'] as const) : []),
-      ...(isSyncCategoryEnabled('notes') ? (['notes'] as const) : []),
-      ...(isSyncCategoryEnabled('books') ? (['books'] as const) : []),
-    ];
-    connectors.push({
-      id: 'readest-cloud',
-      title: _('Readest Cloud'),
-      sources: kinds,
-      sinks: kinds,
-      // Asks for changes from now on: there are none, so nothing is transferred.
-      check: async () => {
-        await new SyncClient().pullChanges(Date.now(), 'books', undefined, undefined, 1);
-        return { ok: true };
-      },
-    });
-  }
   // Web Google Drive can't run once its token is gone, but it's still set up.
   const backends = getActiveFileSyncBackends(settings, plan).filter(
     (kind) => kind === 'gdrive' || canBackendRun(kind),

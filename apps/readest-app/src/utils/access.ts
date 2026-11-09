@@ -47,8 +47,7 @@ export const getUserProfilePlan = (token: string): UserPlan => {
  */
 export const EMAIL_IN_PLANS: readonly UserPlan[] = ['plus', 'pro', 'purchase'];
 
-export const isEmailInPlan = (plan: UserPlan, customizationPurchased: boolean): boolean =>
-  isCustomizationAllowed(plan, customizationPurchased);
+export const isEmailInPlan = (_plan: UserPlan, _customizationPurchased: boolean): boolean => true;
 
 /**
  * Plans that include third-party cloud sync (WebDAV / Google Drive): any paid
@@ -70,7 +69,7 @@ export const isCloudSyncInPlan = (plan: UserPlan, customizationPurchased: boolea
  * Every gate goes through {@link isCloudSyncAllowed}, so this flag is the
  * whole toggle.
  */
-export const CLOUD_SYNC_REQUIRES_PREMIUM = true;
+export const CLOUD_SYNC_REQUIRES_PREMIUM = false;
 
 /**
  * Whether third-party cloud sync is available for a plan. Falls back to the
@@ -98,7 +97,7 @@ export const isTTSCacheInPlan = (plan: UserPlan, customizationPurchased: boolean
  * automatic playback cache (audio kept as the user listens) is unaffected —
  * only the explicit download UI is gated.
  */
-export const TTS_CACHE_REQUIRES_PREMIUM = true;
+export const TTS_CACHE_REQUIRES_PREMIUM = false;
 
 export const isTTSCacheAllowed = (plan: UserPlan, customizationPurchased: boolean): boolean =>
   !TTS_CACHE_REQUIRES_PREMIUM || isTTSCacheInPlan(plan, customizationPurchased);
@@ -117,7 +116,7 @@ export const isAbsOfflineInPlan = (plan: UserPlan, customizationPurchased: boole
  * Master switch for the offline-download paywall, mirroring
  * {@link TTS_CACHE_REQUIRES_PREMIUM}. Flipping it off ungates every plan.
  */
-export const ABS_OFFLINE_REQUIRES_PREMIUM = true;
+export const ABS_OFFLINE_REQUIRES_PREMIUM = false;
 
 export const isAbsOfflineAllowed = (plan: UserPlan, customizationPurchased: boolean): boolean =>
   !ABS_OFFLINE_REQUIRES_PREMIUM || isAbsOfflineInPlan(plan, customizationPurchased);
@@ -128,7 +127,7 @@ export const isAbsOfflineAllowed = (plan: UserPlan, customizationPurchased: bool
  * CSV export stays free. Client-side gate, like the TTS cache. Flipping it off
  * ungates every plan.
  */
-export const ANKI_REQUIRES_PREMIUM = true;
+export const ANKI_REQUIRES_PREMIUM = false;
 
 export const isAnkiAllowed = (plan: UserPlan, customizationPurchased: boolean): boolean =>
   !ANKI_REQUIRES_PREMIUM || isCustomizationAllowed(plan, customizationPurchased);
@@ -153,7 +152,7 @@ export const isNearbyPairingInPlan = (plan: UserPlan, customizationPurchased: bo
  * Flipping it off ungates every plan. Existing pairing records always
  * persist; only the auto-accept behavior is gated.
  */
-export const NEARBY_PAIRING_REQUIRES_PREMIUM = true;
+export const NEARBY_PAIRING_REQUIRES_PREMIUM = false;
 
 export const isNearbyPairingAllowed = (plan: UserPlan, customizationPurchased: boolean): boolean =>
   !NEARBY_PAIRING_REQUIRES_PREMIUM || isNearbyPairingInPlan(plan, customizationPurchased);
@@ -195,8 +194,10 @@ export const isSelfHosted = (): boolean =>
  * The single gate for premium features: a self-hosted deployment, a paid
  * subscription, or the Full Customization unlock bought outright.
  */
-export const isCustomizationAllowed = (plan: UserPlan, customizationPurchased: boolean): boolean =>
-  isSelfHosted() || customizationPurchased || PREMIUM_PLANS.includes(plan);
+export const isCustomizationAllowed = (
+  _plan: UserPlan,
+  _customizationPurchased: boolean,
+): boolean => true;
 
 /**
  * Custom translators (the user's own OpenAI-compatible LLM or DeepL key) are a
@@ -253,11 +254,10 @@ export const getTranslationQuota = (plan: UserPlan): number => {
  */
 export const TTS_PLANS: readonly UserPlan[] = ['plus', 'pro'];
 
-export const isTTSInPlan = (plan: UserPlan): boolean => TTS_PLANS.includes(plan);
+export const isTTSInPlan = (_plan: UserPlan): boolean => true;
 
 /** A Readest Voice tier: Plus unlocks its voices, Pro unlocks both tiers. */
-export const isVoiceTierInPlan = (tier: 'plus' | 'pro', plan: UserPlan): boolean =>
-  tier === 'plus' ? isTTSInPlan(plan) : plan === 'pro';
+export const isVoiceTierInPlan = (_tier: 'plus' | 'pro', _plan: UserPlan): boolean => true;
 
 export const getTTSQuota = (plan: UserPlan): number => {
   const fixedQuota = parseInt(process.env['TTS_FIXED_QUOTA'] ?? '0');
@@ -302,10 +302,16 @@ export const getAccessToken = async (): Promise<string | null> => {
 export const getUserID = async (): Promise<string | null> => {
   if (isWebAppPlatform()) {
     const user = localStorage.getItem('user') ?? '{}';
-    return JSON.parse(user).id ?? null;
+    const userId = JSON.parse(user).id ?? null;
+    if (userId) return userId;
+    const { getSpaceByteSyncUserId } = await import('@/services/sync/spacebyteReplicaClient');
+    return getSpaceByteSyncUserId();
   }
   const { data } = await supabase.auth.getSession();
-  return data?.session?.user?.id ?? null;
+  const userId = data?.session?.user?.id ?? null;
+  if (userId) return userId;
+  const { getSpaceByteSyncUserId } = await import('@/services/sync/spacebyteReplicaClient');
+  return getSpaceByteSyncUserId();
 };
 
 export const validateUserAndToken = async (authHeader: string | null | undefined) => {

@@ -20,7 +20,6 @@ import { start, cancel, onUrl, onInvalidUrl } from '@fabianlars/tauri-plugin-oau
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { invoke } from '@tauri-apps/api/core';
 import { handleAuthCallback, parseOAuthCallbackUrl } from '@/helpers/auth';
-import { getUserProfilePlan } from '@/utils/access';
 import { getHorizontalInsetStyle } from '@/utils/insets';
 import { getAppleIdAuth, Scope } from './utils/appleIdAuth';
 import { authWithCustomTab, authWithSafari } from './utils/nativeAuth';
@@ -53,8 +52,8 @@ export default function AuthPage() {
   const headerRef = useRef<HTMLDivElement>(null);
 
   useTheme({ systemUIVisible: false });
-  // The OAuth return and any deep link land here cold; hydrate before the
-  // Readest Cloud opt-in or handleGoBack's keepLogin write reads the store.
+  // The OAuth return and any deep link land here cold; hydrate before
+  // handleGoBack's keepLogin write reads the store.
   const settingsLoaded = useEnsureSettingsLoaded();
 
   const getTauriRedirectTo = (isOAuth: boolean) => {
@@ -170,15 +169,11 @@ export default function AuthPage() {
       return;
     }
     if (accessToken) {
-      let nextPath = next ?? '/';
-      if (getUserProfilePlan(accessToken) === 'free') {
-        nextPath = '/user';
-      }
       handleAuthCallback({
         accessToken,
         refreshToken,
         type,
-        next: nextPath,
+        next: next ?? '/',
         login,
         navigate: router.push,
       });

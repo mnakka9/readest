@@ -1,7 +1,8 @@
 import { acknowledgeBookshelfOperation } from '@/services/bookshelves/journal';
 import { HlcGenerator } from '@/libs/crdt';
 import { LocalStorageHlcStore, type HlcSnapshotStore } from '@/libs/hlcStore';
-import { ReplicaSyncClient } from '@/libs/replicaSyncClient';
+import type { ReplicaSyncClient } from '@/libs/replicaSyncClient';
+import { spaceByteReplicaSyncClient } from './spacebyteReplicaClient';
 import { eventDispatcher, markSettled, onSettled } from '@/utils/event';
 import i18n from '@/i18n/i18n';
 import { ReplicaSyncManager, type CursorStore } from './replicaSyncManager';
@@ -69,7 +70,7 @@ export const initReplicaSync = (opts: ReplicaSyncInitOpts): ReplicaSyncContext =
     : new HlcGenerator(opts.deviceId);
   const hlc = wrapHlcWithPersistence(baseHlc, hlcStore);
 
-  const client = opts.client ?? new ReplicaSyncClient();
+  const client = opts.client ?? spaceByteReplicaSyncClient;
 
   const manager = new ReplicaSyncManager({
     hlc,
